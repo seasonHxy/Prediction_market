@@ -173,9 +173,9 @@ contract MarketFactory is AccessControl, ReentrancyGuard {
         string calldata question,
         string calldata category,
         uint256 endsAt
-    ) external returns (address marketAddress, bytes32 marketId) {
+    ) external nonReentrant onlyRole(CREATOR_ROLE) returns (address marketAddress, bytes32 marketId) {
         string[] memory emptySources = new string[](0);
-        return createMarket(
+        return _createMarket(
             question,
             category,
             emptySources,
