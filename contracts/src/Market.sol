@@ -12,21 +12,25 @@ import "./AIOracle.sol";
  * @title Market
  * @notice Individual prediction market with USDC stakes and ERC1155 position tokens
  * @dev Implements secure stake/resolve/claim flow with AI oracle integration
+ * @dev Uses EIP-1167 clone pattern for gas-efficient deployment
  */
 contract Market is ERC1155, ReentrancyGuard, AccessControl {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
-    // Immutable market configuration
-    IERC20 public immutable usdc;
-    AIOracle public immutable aiOracle;
-    address public immutable factory;
-    address public immutable treasury;
-    bytes32 public immutable marketId;
-    uint256 public immutable endsAt;
-    uint256 public immutable createdAt;
-    uint16 public immutable feeBP; // basis points (e.g., 200 = 2%)
-    uint256 public immutable maxStakePerUser;
-    uint256 public immutable maxTotalPool;
+    // Storage variables (for clone pattern)
+    IERC20 private _usdc;
+    AIOracle private _aiOracle;
+    address private _factory;
+    address private _treasury;
+    bytes32 private _marketId;
+    uint256 private _endsAt;
+    uint256 private _createdAt;
+    uint16 private _feeBP;
+    uint256 private _maxStakePerUser;
+    uint256 private _maxTotalPool;
+    uint256 private _yesTokenId;
+    uint256 private _noTokenId;
+    bool private _initialized;
 
     // Market state
     MarketTypes.MarketState public state;
@@ -42,9 +46,19 @@ contract Market is ERC1155, ReentrancyGuard, AccessControl {
     mapping(address => mapping(MarketTypes.Side => uint256)) public stakes;
     mapping(address => bool) public claimed;
 
-    // ERC1155 token IDs
-    uint256 public immutable yesTokenId;
-    uint256 public immutable noTokenId;
+    // Public getters for private variables
+    function usdc() public view returns (IERC20) { return _usdc; }
+    function aiOracle() public view returns (AIOracle) { return _aiOracle; }
+    function factory() public view returns (address) { return _factory; }
+    function treasury() public view returns (address) { return _treasury; }
+    function marketId() public view returns (bytes32) { return _marketId; }
+    function endsAt() public view returns (uint256) { return _endsAt; }
+    function createdAt() public view returns (uint256) { return _createdAt; }
+    function feeBP() public view returns (uint16) { return _feeBP; }
+    function maxStakePerUser() public view returns (uint256) { return _maxStakePerUser; }
+    function maxTotalPool() public view returns (uint256) { return _maxTotalPool; }
+    function yesTokenId() public view returns (uint256) { return _yesTokenId; }
+    function noTokenId() public view returns (uint256) { return _noTokenId; }
 
     event Staked(address indexed user, MarketTypes.Side side, uint256 amount, uint256 totalPool);
     event MarketLocked(uint256 timestamp);
@@ -162,19 +176,19 @@ contract Market is ERC1155, ReentrancyGuard, AccessControl {
         notPaused
         inState(MarketTypes.MarketState.Active)
     {
-        if (block.timestamp >= endsAt) revert MarketEnded();
+        if (block.timestamp >= _endsAt) revert MarketEnded();
         if (side != MarketTypes.Side.Yes && side != MarketTypes.Side.No) revert InvalidSide();
         if (amount == 0) revert ZeroAmount();
 
         // Check limits
         uint256 newUserStake = stakes[msg.sender][side] + amount;
-        if (newUserStake > maxStakePerUser) revert ExceedsUserLimit();
+        if (newUserStake > _maxStakePerUser) revert ExceedsUserLimit();
 
         uint256 newTotalPool = yesPool + noPool + amount;
-        if (newTotalPool > maxTotalPool) revert ExceedsPoolLimit();
+        if (newTotalPool > _maxTotalPool) revert ExceedsPoolLimit();
 
         // Transfer USDC from user
-        bool success = usdc.transferFrom(msg.sender, address(this), amount);
+        bool success = _usdc.transferFrom(msg.sender, address(this), amount);
         if (!success) revert TransferFailed();
 
         // Update state
@@ -182,10 +196,10 @@ contract Market is ERC1155, ReentrancyGuard, AccessControl {
         
         if (side == MarketTypes.Side.Yes) {
             yesPool += amount;
-            _mint(msg.sender, yesTokenId, amount, "");
+            _mint(msg.sender, _yesTokenId, amount, "");
         } else {
             noPool += amount;
-            _mint(msg.sender, noTokenId, amount, "");
+            _mint(msg.sender, _noTokenId, amount, "");
         }
 
         emit Staked(msg.sender, side, amount, yesPool + noPool);
@@ -195,7 +209,7 @@ contract Market is ERC1155, ReentrancyGuard, AccessControl {
      * @notice Lock market after end time (prevents new stakes)
      */
     function lockMarket() external {
-        if (block.timestamp < endsAt) revert MarketNotEnded();
+        if (block.timestamp < _endsAt) revert MarketNotEnded();
         if (state != MarketTypes.MarketState.Active) revert InvalidState();
 
         _changeState(MarketTypes.MarketState.Locked);
@@ -210,10 +224,10 @@ contract Market is ERC1155, ReentrancyGuard, AccessControl {
         if (state != MarketTypes.MarketState.Locked && state != MarketTypes.MarketState.Resolving) {
             revert InvalidState();
         }
-        if (block.timestamp < endsAt) revert MarketNotEnded();
+        if (block.timestamp < _endsAt) revert MarketNotEnded();
 
         // Check oracle finalization
-        if (!aiOracle.isResolutionFinalized(marketId)) {
+        if (!_aiOracle.isResolutionFinalized(_marketId)) {
             // If not finalized, update state to Resolving
             if (state == MarketTypes.MarketState.Locked) {
                 _changeState(MarketTypes.MarketState.Resolving);
@@ -222,16 +236,16 @@ contract Market is ERC1155, ReentrancyGuard, AccessControl {
         }
 
         // Get result from oracle
-        MarketTypes.Side result = aiOracle.getResolution(marketId);
+        MarketTypes.Side result = _aiOracle.getResolution(_marketId);
 
         // Calculate fees
         uint256 totalPool = yesPool + noPool;
-        feeAmount = (totalPool * feeBP) / 10000;
+        feeAmount = (totalPool * _feeBP) / 10000;
         distributableAmount = totalPool - feeAmount;
 
         // Transfer fees to treasury
         if (feeAmount > 0) {
-            bool success = usdc.transfer(treasury, feeAmount);
+            bool success = _usdc.transfer(_treasury, feeAmount);
             if (!success) revert TransferFailed();
         }
 
@@ -247,7 +261,7 @@ contract Market is ERC1155, ReentrancyGuard, AccessControl {
         if (state != MarketTypes.MarketState.Resolved) revert NotResolved();
         if (claimed[msg.sender]) revert AlreadyClaimed();
 
-        MarketTypes.Side winSide = aiOracle.getResolution(marketId);
+        MarketTypes.Side winSide = _aiOracle.getResolution(_marketId);
         uint256 winningPool = (winSide == MarketTypes.Side.Yes) ? yesPool : noPool;
 
         // Handle edge case: no one bet on winning side
@@ -265,11 +279,11 @@ contract Market is ERC1155, ReentrancyGuard, AccessControl {
         claimed[msg.sender] = true;
 
         // Burn position tokens
-        uint256 tokenId = (winSide == MarketTypes.Side.Yes) ? yesTokenId : noTokenId;
+        uint256 tokenId = (winSide == MarketTypes.Side.Yes) ? _yesTokenId : _noTokenId;
         _burn(msg.sender, tokenId, userStake);
 
         // Transfer payout
-        bool success = usdc.transfer(msg.sender, payout);
+        bool success = _usdc.transfer(msg.sender, payout);
         if (!success) revert TransferFailed();
 
         emit Claimed(msg.sender, payout);
@@ -281,12 +295,12 @@ contract Market is ERC1155, ReentrancyGuard, AccessControl {
     function batchClaim(address[] calldata users) external nonReentrant {
         if (state != MarketTypes.MarketState.Resolved) revert NotResolved();
 
-        MarketTypes.Side winSide = aiOracle.getResolution(marketId);
+        MarketTypes.Side winSide = _aiOracle.getResolution(_marketId);
         uint256 winningPool = (winSide == MarketTypes.Side.Yes) ? yesPool : noPool;
 
         require(winningPool > 0, "Zero winning pool");
 
-        uint256 tokenId = (winSide == MarketTypes.Side.Yes) ? yesTokenId : noTokenId;
+        uint256 tokenId = (winSide == MarketTypes.Side.Yes) ? _yesTokenId : _noTokenId;
 
         for (uint256 i = 0; i < users.length; i++) {
             address user = users[i];
@@ -301,7 +315,7 @@ contract Market is ERC1155, ReentrancyGuard, AccessControl {
             claimed[user] = true;
             _burn(user, tokenId, userStake);
             
-            bool success = usdc.transfer(user, payout);
+            bool success = _usdc.transfer(user, payout);
             if (!success) revert TransferFailed();
 
             emit Claimed(user, payout);
@@ -337,14 +351,14 @@ contract Market is ERC1155, ReentrancyGuard, AccessControl {
 
         // Burn position tokens
         if (yesStake > 0) {
-            _burn(msg.sender, yesTokenId, yesStake);
+            _burn(msg.sender, _yesTokenId, yesStake);
         }
         if (noStake > 0) {
-            _burn(msg.sender, noTokenId, noStake);
+            _burn(msg.sender, _noTokenId, noStake);
         }
 
         // Refund
-        bool success = usdc.transfer(msg.sender, totalStake);
+        bool success = _usdc.transfer(msg.sender, totalStake);
         if (!success) revert TransferFailed();
 
         emit Refunded(msg.sender, totalStake);
@@ -369,7 +383,7 @@ contract Market is ERC1155, ReentrancyGuard, AccessControl {
         if (state != MarketTypes.MarketState.Resolved) return false;
         if (claimed[user]) return false;
         
-        MarketTypes.Side winSide = aiOracle.getResolution(marketId);
+        MarketTypes.Side winSide = _aiOracle.getResolution(_marketId);
         return stakes[user][winSide] > 0;
     }
 
@@ -379,7 +393,7 @@ contract Market is ERC1155, ReentrancyGuard, AccessControl {
     function getPotentialPayout(address user) external view returns (uint256) {
         if (state != MarketTypes.MarketState.Resolved) return 0;
         
-        MarketTypes.Side winSide = aiOracle.getResolution(marketId);
+        MarketTypes.Side winSide = _aiOracle.getResolution(_marketId);
         uint256 winningPool = (winSide == MarketTypes.Side.Yes) ? yesPool : noPool;
         
         if (winningPool == 0) return stakes[user][winSide == MarketTypes.Side.Yes ? MarketTypes.Side.No : MarketTypes.Side.Yes];
@@ -404,11 +418,11 @@ contract Market is ERC1155, ReentrancyGuard, AccessControl {
         claimed[msg.sender] = true;
 
         // Burn position tokens
-        uint256 tokenId = (loseSide == MarketTypes.Side.Yes) ? yesTokenId : noTokenId;
+        uint256 tokenId = (loseSide == MarketTypes.Side.Yes) ? _yesTokenId : _noTokenId;
         _burn(msg.sender, tokenId, userStake);
 
         // Refund stake
-        bool success = usdc.transfer(msg.sender, userStake);
+        bool success = _usdc.transfer(msg.sender, userStake);
         if (!success) revert TransferFailed();
 
         emit Refunded(msg.sender, userStake);
