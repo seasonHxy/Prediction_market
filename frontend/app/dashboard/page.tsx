@@ -6,12 +6,14 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { usePrivy } from "@privy-io/react-auth"
 import { useRouter } from "next/navigation"
-import { Wallet, TrendingUp, Award, Clock } from "lucide-react"
+import { Wallet, TrendingUp, Award, Clock, Copy } from "lucide-react"
 import Link from "next/link"
+import { useToast } from "@/components/ui/use-toast"
 
 export default function DashboardPage() {
   const { user, logout } = usePrivy()
   const router = useRouter()
+  const { toast } = useToast()
 
   if (!user) {
     router.push("/")
@@ -65,7 +67,7 @@ export default function DashboardPage() {
         <div className="mb-8 flex justify-between items-start">
           <div>
             <h1 className="text-4xl font-bold text-foreground mb-2">Dashboard</h1>
-            <p className="text-muted-foreground">Welcome back, {user?.email?.address || "Forecaster"}</p>
+            <p className="text-muted-foreground">Welcome back, {user?.google?.name || user?.github?.name || user?.email?.address || "Forecaster"}</p>
           </div>
           <Button onClick={() => logout()} variant="outline" className="border-border text-foreground hover:bg-muted">
             Logout
@@ -75,13 +77,32 @@ export default function DashboardPage() {
         {/* Stats Cards */}
         <div className="grid md:grid-cols-4 gap-4 mb-8">
           <Card className="p-6 border border-border bg-card">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-4">
               <div>
                 <p className="text-sm text-muted-foreground mb-1">Wallet Balance</p>
                 <p className="text-2xl font-bold text-foreground">4,325 USDC</p>
               </div>
               <Wallet className="h-8 w-8 text-accent" />
             </div>
+            {user?.smartWalletPublicAddress && (
+              <div className="flex items-center justify-between text-sm text-muted-foreground">
+                <p className="truncate">{user.smartWalletPublicAddress}</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(user.smartWalletPublicAddress || "")
+                    toast({
+                      title: "Copied!",
+                      description: "Wallet address copied to clipboard.",
+                    })
+                  }}
+                  className="ml-2 px-2"
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </Card>
           <Card className="p-6 border border-border bg-card">
             <div className="flex items-center justify-between">
