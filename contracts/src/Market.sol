@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import "./MarketTypes.sol";
 import "./AIOracle.sol";
 
@@ -427,5 +428,18 @@ contract Market is ERC1155, ReentrancyGuard, AccessControl {
             _endsAt,
             state == MarketTypes.MarketState.Resolved
         );
+    }
+
+    /**
+     * @dev Override supportsInterface to resolve conflict between ERC1155 and AccessControl
+     */
+    function supportsInterface(bytes4 interfaceId) 
+        public 
+        view 
+        virtual 
+        override(ERC1155, AccessControl) 
+        returns (bool) 
+    {
+        return super.supportsInterface(interfaceId);
     }
 }

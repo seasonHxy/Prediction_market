@@ -2,6 +2,7 @@
 pragma solidity ^0.8.23;
 
 import "forge-std/Test.sol";
+import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import "../src/Market.sol";
 import "../src/MarketFactory.sol";
 import "../src/AIOracle.sol";
@@ -211,9 +212,9 @@ contract MarketTest is Test {
         bytes32 msgHash2 = keccak256(abi.encodePacked(address(oracle), marketId, uint8(MarketTypes.Side.Yes), timestamp, nonce2));
         bytes32 msgHash3 = keccak256(abi.encodePacked(address(oracle), marketId, uint8(MarketTypes.Side.Yes), timestamp, nonce3));
 
-        (uint8 v1, bytes32 r1, bytes32 s1) = vm.sign(uint256(uint160(aiSigner1)), msgHash1.toEthSignedMessageHash());
-        (uint8 v2, bytes32 r2, bytes32 s2) = vm.sign(uint256(uint160(aiSigner2)), msgHash2.toEthSignedMessageHash());
-        (uint8 v3, bytes32 r3, bytes32 s3) = vm.sign(uint256(uint160(aiSigner3)), msgHash3.toEthSignedMessageHash());
+        (uint8 v1, bytes32 r1, bytes32 s1) = vm.sign(uint256(uint160(aiSigner1)), MessageHashUtils.toEthSignedMessageHash(msgHash1));
+        (uint8 v2, bytes32 r2, bytes32 s2) = vm.sign(uint256(uint160(aiSigner2)), MessageHashUtils.toEthSignedMessageHash(msgHash2));
+        (uint8 v3, bytes32 r3, bytes32 s3) = vm.sign(uint256(uint160(aiSigner3)), MessageHashUtils.toEthSignedMessageHash(msgHash3));
 
         vm.prank(aiSigner1);
         oracle.submitResolution(marketId, MarketTypes.Side.Yes, timestamp, nonce1, abi.encodePacked(r1, s1, v1));
