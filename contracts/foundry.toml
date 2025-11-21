@@ -36,6 +36,12 @@ line_length = 120
 tab_width = 4
 bracket_spacing = true
 
+remappings = [
+    "@openzeppelin/=lib/openzeppelin-contracts/",
+    "forge-std/=lib/forge-std/src/"
+]
+
+fs_permissions = [{ access = "read-write", path = "./deployments" }]
 
 
 # See more config options https://github.com/foundry-rs/foundry/tree/master/crates/config
