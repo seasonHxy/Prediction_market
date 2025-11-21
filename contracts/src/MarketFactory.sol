@@ -101,7 +101,7 @@ contract MarketFactory is AccessControl, ReentrancyGuard {
         uint16 customFeeBP,
         uint256 customMaxStakePerUser,
         uint256 customMaxTotalPool
-    ) external nonReentrant onlyRole(CREATOR_ROLE) returns (address marketAddress, bytes32 marketId) {
+    ) public nonReentrant onlyRole(CREATOR_ROLE) returns (address marketAddress, bytes32 marketId) {
         // Validate parameters
         uint256 duration = endsAt - block.timestamp;
         if (duration < minMarketDuration || duration > maxMarketDuration) {
@@ -175,7 +175,7 @@ contract MarketFactory is AccessControl, ReentrancyGuard {
         uint256 endsAt
     ) external nonReentrant onlyRole(CREATOR_ROLE) returns (address marketAddress, bytes32 marketId) {
         string[] memory emptySources = new string[](0);
-        return _createMarket(
+        return this.createMarket(
             question,
             category,
             emptySources,

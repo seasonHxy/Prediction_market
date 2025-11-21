@@ -93,35 +93,6 @@ contract Market is ERC1155, ReentrancyGuard, AccessControl {
         _;
     }
 
-    // For EIP-1167 clone pattern, we use storage variables instead of immutables
-    IERC20 private _usdc;
-    AIOracle private _aiOracle;
-    address private _factory;
-    address private _treasury;
-    bytes32 private _marketId;
-    uint256 private _endsAt;
-    uint256 private _createdAt;
-    uint16 private _feeBP;
-    uint256 private _maxStakePerUser;
-    uint256 private _maxTotalPool;
-    uint256 private _yesTokenId;
-    uint256 private _noTokenId;
-    bool private _initialized;
-
-    // Override immutable getters
-    function usdc() public view returns (IERC20) { return _usdc; }
-    function aiOracle() public view returns (AIOracle) { return _aiOracle; }
-    function factory() public view returns (address) { return _factory; }
-    function treasury() public view returns (address) { return _treasury; }
-    function marketId() public view returns (bytes32) { return _marketId; }
-    function endsAt() public view returns (uint256) { return _endsAt; }
-    function createdAt() public view returns (uint256) { return _createdAt; }
-    function feeBP() public view returns (uint16) { return _feeBP; }
-    function maxStakePerUser() public view returns (uint256) { return _maxStakePerUser; }
-    function maxTotalPool() public view returns (uint256) { return _maxTotalPool; }
-    function yesTokenId() public view returns (uint256) { return _yesTokenId; }
-    function noTokenId() public view returns (uint256) { return _noTokenId; }
-
     constructor() ERC1155("") {
         // Implementation contract constructor
         _initialized = true; // Prevent initialization of implementation
@@ -453,7 +424,7 @@ contract Market is ERC1155, ReentrancyGuard, AccessControl {
             yesPool + noPool,
             yesPool,
             noPool,
-            endsAt,
+            _endsAt,
             state == MarketTypes.MarketState.Resolved
         );
     }
