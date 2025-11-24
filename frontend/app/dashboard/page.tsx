@@ -12,11 +12,13 @@ import { useState, useEffect } from "react" // Added useState
 
 import { useBalance } from "wagmi"
 import { RefreshCw } from "lucide-react"
+import { AddFundsModal } from "@/components/AddFundsModal";
 
 export default function DashboardPage() {
   const { user, logout } = usePrivy()
   const router = useRouter()
   const [alertMessage, setAlertMessage] = useState<string | null>(null); // Added alert state
+  const [isAddFundsModalOpen, setIsAddFundsModalOpen] = useState(false);
 
   const address = user?.wallet?.address as `0x${string}` | undefined;
 
@@ -311,10 +313,7 @@ export default function DashboardPage() {
               </div>
               <Button
                 className="w-full bg-primary hover:bg-primary/90 text-primary-foreground mb-2"
-                onClick={() => {
-                  setAlertMessage("Add Funds functionality is not yet implemented.");
-                  setTimeout(() => setAlertMessage(null), 3000); // Clear after 3 seconds
-                }}
+                onClick={() => setIsAddFundsModalOpen(true)}
               >
                 Add Funds
               </Button>
@@ -347,6 +346,13 @@ export default function DashboardPage() {
           </div>
         </div>
       </main>
+      {address && (
+        <AddFundsModal
+          address={address}
+          isOpen={isAddFundsModalOpen}
+          onClose={() => setIsAddFundsModalOpen(false)}
+        />
+      )}
     </div>
   )
 }
