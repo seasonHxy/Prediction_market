@@ -6,9 +6,43 @@ optimizer = true
 optimizer_runs = 200
 via_ir = true
 
+# Base network RPC URLs
+[rpc_endpoints]
+base_mainnet = "${BASE_MAINNET_RPC_URL}"
+base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+
+# Etherscan API keys for verification
+[etherscan]
+base = { key = "${BASESCAN_API_KEY}" }
+base_sepolia = { key = "${BASESCAN_API_KEY}" }
+
+
+# Test configuration
+[profile.default.fuzz]
+runs = 256
+
+[profile.default.invariant]
+runs = 256
+depth = 15
+
+# CI profile (more thorough)
 [profile.ci]
 fuzz = { runs = 5000 }
 invariant = { runs = 1000 }
+
+# Coverage
+[profile.default.fmt]
+line_length = 120
+tab_width = 4
+bracket_spacing = true
+
+remappings = [
+    "@openzeppelin/=lib/openzeppelin-contracts/",
+    "forge-std/=lib/forge-std/src/"
+]
+
+fs_permissions = [{ access = "read-write", path = "./deployments" }]
+
 
 # See more config options https://github.com/foundry-rs/foundry/tree/master/crates/config
 

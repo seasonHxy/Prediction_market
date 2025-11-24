@@ -7,12 +7,13 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { usePrivy } from "@privy-io/react-auth"
 import { useRouter, useParams } from "next/navigation"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { ArrowLeft, TrendingUp, Users, Clock } from "lucide-react"
 import Link from "next/link"
+import { getUsdcBalance } from "@/lib/web3-utils"
 
-// Mock market detail data
-const MARKET_DETAILS: Record<string, any> = {
+// Mock market data mapping
+const MARKET_DETAILS_MAP: Record<string, any> = {
   "1": {
     id: "1",
     question: "Will Bitcoin reach $100k by end of 2025?",
@@ -22,11 +23,23 @@ const MARKET_DETAILS: Record<string, any> = {
     noPool: 48000,
     endsAt: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000),
     participants: 1243,
-    riskLevel: "Medium",
     description:
-      "This market resolves YES if the spot price of Bitcoin reaches or exceeds $100,000 USD at any point before the deadline, as verified by major crypto exchanges.",
-    sources: ["CoinMarketCap", "CoinGecko", "Binance", "Kraken"],
+      "This market resolves YES if the spot price of Bitcoin reaches or exceeds $100,000 USD at any point before the deadline.",
+    sources: ["CoinMarketCap", "CoinGecko", "Binance"],
     aiConfidence: "Moderate confidence based on current trend analysis and technical indicators.",
+  },
+  "2": {
+    id: "2",
+    question: "Will US inflation drop below 2.5% by Q4 2025?",
+    category: "Economy",
+    yesProbability: 58,
+    yesPool: 89000,
+    noPool: 76500,
+    endsAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+    participants: 856,
+    description: "This market resolves YES if the US CPI inflation rate drops below 2.5% by Q4 2025.",
+    sources: ["BLS", "Federal Reserve", "Economic Data"],
+    aiConfidence: "High confidence based on macroeconomic trends.",
   },
 }
 
@@ -36,10 +49,17 @@ export default function MarketDetailPage() {
   const params = useParams()
   const marketId = params.id as string
 
-  const market = MARKET_DETAILS[marketId] || MARKET_DETAILS["1"]
+  const market = MARKET_DETAILS_MAP[marketId] || MARKET_DETAILS_MAP["1"]
   const [selectedSide, setSelectedSide] = useState<"yes" | "no" | null>(null)
   const [amount, setAmount] = useState("")
   const [isStaking, setIsStaking] = useState(false)
+  const [usdcBalance, setUsdcBalance] = useState<number>(0)
+
+  useEffect(() => {
+    if (user?.smartWalletPublicAddress) {
+      getUsdcBalance(user.smartWalletPublicAddress).then(setUsdcBalance)
+    }
+  }, [user?.smartWalletPublicAddress])
 
   if (!user) {
     return (
@@ -56,14 +76,22 @@ export default function MarketDetailPage() {
   }
 
   const handleStake = async () => {
-    if (!selectedSide || !amount) return
+    if (!selectedSide || !amount || !user?.smartWalletPublicAddress) return
+
     setIsStaking(true)
-    // Simulate staking
-    setTimeout(() => {
+    try {
+      console.log("[v0] Staking", amount, "USDC on", selectedSide, "for market", marketId)
+      // Transaction will be executed here through Privy wallet
+
+      setTimeout(() => {
+        setIsStaking(false)
+        setAmount("")
+        setSelectedSide(null)
+      }, 2000)
+    } catch (error) {
+      console.error("[v0] Staking error:", error)
       setIsStaking(false)
-      setAmount("")
-      setSelectedSide(null)
-    }, 2000)
+    }
   }
 
   const totalPool = market.yesPool + market.noPool
@@ -74,7 +102,6 @@ export default function MarketDetailPage() {
       <Navbar />
 
       <main className="container mx-auto px-4 py-8">
-        {/* Back Button */}
         <Button variant="ghost" className="mb-6 text-muted-foreground hover:text-foreground" asChild>
           <Link href="/markets" className="flex items-center gap-2">
             <ArrowLeft className="h-4 w-4" />
@@ -83,9 +110,7 @@ export default function MarketDetailPage() {
         </Button>
 
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Market Header */}
             <Card className="p-8 border border-border bg-card">
               <div className="mb-4">
                 <Badge variant="secondary" className="mb-2">
@@ -95,7 +120,6 @@ export default function MarketDetailPage() {
               <h1 className="text-3xl font-bold text-foreground mb-4">{market.question}</h1>
               <p className="text-lg text-muted-foreground mb-6">{market.description}</p>
 
-              {/* AI Probability Section */}
               <div className="p-6 rounded-lg bg-muted/50 mb-6">
                 <h3 className="font-semibold text-foreground mb-4">AI Probability Analysis</h3>
                 <div className="mb-4">
@@ -117,7 +141,6 @@ export default function MarketDetailPage() {
                 <p className="text-sm text-muted-foreground mt-4">{market.aiConfidence}</p>
               </div>
 
-              {/* Evidence Sources */}
               <div>
                 <h3 className="font-semibold text-foreground mb-3">Verification Sources</h3>
                 <div className="flex flex-wrap gap-2">
@@ -130,7 +153,6 @@ export default function MarketDetailPage() {
               </div>
             </Card>
 
-            {/* Market Stats */}
             <div className="grid grid-cols-3 gap-4">
               <Card className="p-4 border border-border bg-card">
                 <div className="text-sm text-muted-foreground mb-1 flex items-center gap-1">
@@ -196,7 +218,7 @@ export default function MarketDetailPage() {
                   className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
                   disabled={!selectedSide}
                 />
-                <p className="text-xs text-muted-foreground mt-2">Available Balance: 5,000 USDC</p>
+                <p className="text-xs text-muted-foreground mt-2">Available Balance: {usdcBalance.toFixed(2)} USDC</p>
               </div>
 
               {/* Pool Distribution */}
@@ -219,7 +241,7 @@ export default function MarketDetailPage() {
               {/* Stake Button */}
               <Button
                 onClick={handleStake}
-                disabled={!selectedSide || !amount || isStaking}
+                disabled={!selectedSide || !amount || isStaking || Number(amount) > usdcBalance}
                 className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-semibold mb-3"
               >
                 {isStaking ? "Confirming..." : "Confirm Prediction"}
