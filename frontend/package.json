@@ -11,7 +11,8 @@
   "dependencies": {
     "@abstract-foundation/agw-client": "latest",
     "@hookform/resolvers": "^3.10.0",
-    "@privy-io/react-auth": "latest",
+    "@privy-io/react-auth": "^3.8.0",
+    "@privy-io/wagmi": "^2.0.3",
     "@radix-ui/react-accordion": "1.2.2",
     "@radix-ui/react-alert-dialog": "1.1.4",
     "@radix-ui/react-aspect-ratio": "1.1.1",
@@ -43,6 +44,7 @@
     "@solana-program/system": "latest",
     "@solana-program/token": "latest",
     "@solana/kit": "latest",
+    "@tanstack/react-query": "^5.90.10",
     "@vercel/analytics": "latest",
     "autoprefixer": "^10.4.20",
     "class-variance-authority": "^0.7.1",
@@ -65,6 +67,7 @@
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
+    "wagmi": "^3.0.1",
     "zod": "3.25.76"
   },
   "devDependencies": {
