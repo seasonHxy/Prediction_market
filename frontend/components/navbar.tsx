@@ -3,8 +3,9 @@
 import { usePrivy } from "@privy-io/react-auth"
 import Link from "next/link"
 import { ThemeToggle } from "./theme-toggle"
-import { Button } from "@/components/ui/button"
+import { SignUpButton } from "./signupButton"
 import { useRouter } from "next/navigation"
+import { Button } from "./ui/button"
 
 export function Navbar() {
   const { user, login, logout } = usePrivy()
@@ -37,9 +38,9 @@ export function Navbar() {
               Dashboard
             </Button>
           ) : (
-            <Button onClick={login} className="bg-accent hover:bg-accent/90">
-              Login with Privy
-            </Button>
+            <SignUpButton/>
+             
+            
           )}
         </div>
       </div>

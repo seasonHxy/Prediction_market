@@ -8,23 +8,36 @@ import { usePrivy } from "@privy-io/react-auth"
 import { useRouter } from "next/navigation"
 import { Wallet, TrendingUp, Award, Clock } from "lucide-react"
 import Link from "next/link"
-import { useEffect, useState } from "react"
-import { getUsdcBalance } from "@/lib/web3-utils"
+
+import { useState, useEffect } from "react" // Added useState
+
+import { useBalance } from "wagmi"
+import { RefreshCw } from "lucide-react"
+import { AddFundsModal } from "@/components/AddFundsModal";
+
 
 export default function DashboardPage() {
   const { user, logout } = usePrivy()
   const router = useRouter()
-  const [usdcBalance, setUsdcBalance] = useState<number>(0)
+
+  const [alertMessage, setAlertMessage] = useState<string | null>(null); // Added alert state
+  const [isAddFundsModalOpen, setIsAddFundsModalOpen] = useState(false);
+
+  const address = user?.wallet?.address as `0x${string}` | undefined;
+
+  const { data: balance, isLoading: isBalanceLoading, refetch: refetchBalance } = useBalance({
+    address: address,
+  });
 
   useEffect(() => {
-    if (user?.smartWalletPublicAddress) {
-      getUsdcBalance(user.smartWalletPublicAddress).then(setUsdcBalance)
+    if (!user) {
+      router.push("/");
     }
-  }, [user?.smartWalletPublicAddress])
+  }, [user, router]);
+
 
   if (!user) {
-    router.push("/")
-    return null
+    return null;
   }
 
   const activePositions = [
@@ -70,6 +83,11 @@ export default function DashboardPage() {
       <Navbar />
 
       <main className="container mx-auto px-4 py-12">
+        {alertMessage && (
+          <div className="fixed top-4 right-4 bg-primary text-primary-foreground px-4 py-2 rounded-md shadow-lg z-50">
+            {alertMessage}
+          </div>
+        )}
         {/* Dashboard Header */}
         <div className="mb-8 flex justify-between items-start">
           <div>
@@ -224,17 +242,42 @@ export default function DashboardPage() {
               <h3 className="font-bold text-foreground mb-4">Wallet</h3>
               <div className="mb-4">
                 <p className="text-sm text-muted-foreground mb-1">Connected Wallet</p>
-                <p className="font-mono text-sm text-foreground break-all">
-                  {user?.smartWalletPublicAddress?.slice(0, 6)}...
-                  {user?.smartWalletPublicAddress?.slice(-4)}
-                </p>
+                {address && (
+                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <p className="font-mono text-sm text-foreground break-all">{address}</p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(address || "");
+                        setAlertMessage("Wallet address copied to clipboard!");
+                        setTimeout(() => setAlertMessage(null), 3000); // Clear after 3 seconds
+                      }}
+                      className="ml-2 px-2"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
               </div>
               <div className="mb-6">
                 <p className="text-sm text-muted-foreground mb-1">Available Balance</p>
                 <p className="text-2xl font-bold text-foreground">{usdcBalance.toFixed(0)} USDC</p>
               </div>
-              <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground mb-2">Add Funds</Button>
-              <Button variant="outline" className="w-full border-border text-foreground hover:bg-muted bg-transparent">
+              <Button
+                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground mb-2"
+                onClick={() => setIsAddFundsModalOpen(true)}
+              >
+                Add Funds
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full border-border text-foreground hover:bg-muted bg-transparent"
+                onClick={() => {
+                  setAlertMessage("Withdraw functionality is not yet implemented.");
+                  setTimeout(() => setAlertMessage(null), 3000); // Clear after 3 seconds
+                }}
+              >
                 Withdraw
               </Button>
             </Card>
@@ -256,6 +299,13 @@ export default function DashboardPage() {
           </div>
         </div>
       </main>
+      {address && (
+        <AddFundsModal
+          address={address}
+          isOpen={isAddFundsModalOpen}
+          onClose={() => setIsAddFundsModalOpen(false)}
+        />
+      )}
     </div>
   )
 }
