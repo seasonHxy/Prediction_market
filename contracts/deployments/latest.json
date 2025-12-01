@@ -1,0 +1,9 @@
+{
+  "chainId": "84532",
+  "oracle": "0xfc70C42bC2355Cbc98Bc575032dA8Dc33F0a11F4",
+  "marketImplementation": "0x7F0ba204385d2f0c5d42572ed4ceEc622441A451",
+  "factory": "0xDb657bC5A74A81E919f9d671035dB0b6370c9d16",
+  "usdc": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+  "treasury": "0x8a7AEad289a7CFE47891C4a320c773b254581fcB",
+  "admin": "0x8a7AEad289a7CFE47891C4a320c773b254581fcB"
+}
