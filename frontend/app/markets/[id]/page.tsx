@@ -8,58 +8,85 @@ import { Input } from "@/components/ui/input"
 import { usePrivy } from "@privy-io/react-auth"
 import { useRouter, useParams } from "next/navigation"
 import { useState, useEffect } from "react"
-import { ArrowLeft, TrendingUp, Users, Clock } from "lucide-react"
+import { ArrowLeft, TrendingUp, Users, Clock, Loader2 } from "lucide-react"
 import Link from "next/link"
-import { getUsdcBalance } from "@/lib/web3-utils"
-
-// Mock market data mapping
-const MARKET_DETAILS_MAP: Record<string, any> = {
-  "1": {
-    id: "1",
-    question: "Will Bitcoin reach $100k by end of 2025?",
-    category: "Crypto",
-    yesProbability: 72,
-    yesPool: 125000,
-    noPool: 48000,
-    endsAt: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000),
-    participants: 1243,
-    description:
-      "This market resolves YES if the spot price of Bitcoin reaches or exceeds $100,000 USD at any point before the deadline.",
-    sources: ["CoinMarketCap", "CoinGecko", "Binance"],
-    aiConfidence: "Moderate confidence based on current trend analysis and technical indicators.",
-  },
-  "2": {
-    id: "2",
-    question: "Will US inflation drop below 2.5% by Q4 2025?",
-    category: "Economy",
-    yesProbability: 58,
-    yesPool: 89000,
-    noPool: 76500,
-    endsAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
-    participants: 856,
-    description: "This market resolves YES if the US CPI inflation rate drops below 2.5% by Q4 2025.",
-    sources: ["BLS", "Federal Reserve", "Economic Data"],
-    aiConfidence: "High confidence based on macroeconomic trends.",
-  },
-}
+import { useMarket } from "@/hooks/use-market"
+import { useOracle } from "@/hooks/use-oracle"
+import { usePublicClient } from 'wagmi'
+import { baseSepolia } from 'viem/chains'
+import { USDC_ADDRESS, USDC_ABI } from '@/lib/contracts'
+import { formatUsdc } from '@/lib/web3-utils'
+import { toast } from 'sonner'
+import type { Address } from 'viem'
 
 export default function MarketDetailPage() {
   const { user, login } = usePrivy()
   const router = useRouter()
   const params = useParams()
-  const marketId = params.id as string
+  const marketAddress = params.id as Address
+  const publicClient = usePublicClient({ chainId: baseSepolia.id })
 
-  const market = MARKET_DETAILS_MAP[marketId] || MARKET_DETAILS_MAP["1"]
+  const { getMarketInfo, getUserStake, stake, isLoading: isStaking } = useMarket(marketAddress)
+  const { getResolution, isResolutionFinalized } = useOracle()
+
   const [selectedSide, setSelectedSide] = useState<"yes" | "no" | null>(null)
   const [amount, setAmount] = useState("")
-  const [isStaking, setIsStaking] = useState(false)
   const [usdcBalance, setUsdcBalance] = useState<number>(0)
+  const [marketInfo, setMarketInfo] = useState<any>(null)
+  const [userStake, setUserStake] = useState<any>(null)
+  const [isResolved, setIsResolved] = useState(false)
+  const [loading, setLoading] = useState(true)
 
+  // Fetch USDC balance
   useEffect(() => {
-    if (user?.smartWalletPublicAddress) {
-      getUsdcBalance(user.smartWalletPublicAddress).then(setUsdcBalance)
+    const fetchBalance = async () => {
+      if (!user?.wallet?.address || !publicClient) return
+
+      try {
+        const balance = await publicClient.readContract({
+          address: USDC_ADDRESS,
+          abi: USDC_ABI,
+          functionName: 'balanceOf',
+          args: [user.wallet.address as Address],
+        })
+        setUsdcBalance(formatUsdc(balance as bigint))
+      } catch (error) {
+        console.error('Error fetching USDC balance:', error)
+      }
     }
-  }, [user?.smartWalletPublicAddress])
+
+    fetchBalance()
+  }, [user?.wallet?.address, publicClient])
+
+  // Fetch market data
+  useEffect(() => {
+    const fetchMarketData = async () => {
+      setLoading(true)
+      try {
+        const [info, resolution] = await Promise.all([
+          getMarketInfo(),
+          getResolution(marketAddress),
+        ])
+
+        setMarketInfo(info)
+        setIsResolved(resolution !== null && resolution !== 255)
+
+        if (user?.wallet?.address) {
+          const stake = await getUserStake(user.wallet.address as Address)
+          setUserStake(stake)
+        }
+      } catch (error) {
+        console.error('Error fetching market data:', error)
+        toast.error('Failed to load market data')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    if (marketAddress) {
+      fetchMarketData()
+    }
+  }, [marketAddress, user?.wallet?.address, getMarketInfo, getUserStake, getResolution])
 
   if (!user) {
     return (
@@ -75,27 +102,47 @@ export default function MarketDetailPage() {
     )
   }
 
+  if (loading || !marketInfo) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <main className="container mx-auto px-4 py-12 flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </main>
+      </div>
+    )
+  }
+
   const handleStake = async () => {
-    if (!selectedSide || !amount || !user?.smartWalletPublicAddress) return
+    if (!selectedSide || !amount || !user?.wallet?.address) return
 
-    setIsStaking(true)
+    const amountNum = parseFloat(amount)
+    if (amountNum <= 0 || amountNum > usdcBalance) {
+      toast.error('Invalid amount')
+      return
+    }
+
     try {
-      console.log("[v0] Staking", amount, "USDC on", selectedSide, "for market", marketId)
-      // Transaction will be executed here through Privy wallet
-
-      setTimeout(() => {
-        setIsStaking(false)
-        setAmount("")
-        setSelectedSide(null)
-      }, 2000)
-    } catch (error) {
-      console.error("[v0] Staking error:", error)
-      setIsStaking(false)
+      await stake(selectedSide, amountNum)
+      toast.success('Stake placed successfully!')
+      
+      // Refresh data
+      const [info, userStakeData] = await Promise.all([
+        getMarketInfo(),
+        getUserStake(user.wallet.address as Address),
+      ])
+      setMarketInfo(info)
+      setUserStake(userStakeData)
+      setAmount("")
+      setSelectedSide(null)
+    } catch (error: any) {
+      console.error('Staking error:', error)
+      toast.error(error?.message || 'Failed to place stake')
     }
   }
 
-  const totalPool = market.yesPool + market.noPool
-  const daysLeft = Math.ceil((market.endsAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+  const daysLeft = Math.ceil((marketInfo.endsAt * 1000 - Date.now()) / (24 * 60 * 60 * 1000))
+  const marketState = ['Pending', 'Active', 'Closed', 'Resolved', 'Cancelled'][marketInfo.state]
 
   return (
     <div className="min-h-screen bg-background">
@@ -112,45 +159,49 @@ export default function MarketDetailPage() {
         <div className="grid lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
             <Card className="p-8 border border-border bg-card">
-              <div className="mb-4">
-                <Badge variant="secondary" className="mb-2">
-                  {market.category}
+              <div className="mb-4 flex items-center gap-2">
+                <Badge variant="secondary">Market</Badge>
+                <Badge variant={marketInfo.state === 1 ? 'default' : 'outline'}>
+                  {marketState}
                 </Badge>
               </div>
-              <h1 className="text-3xl font-bold text-foreground mb-4">{market.question}</h1>
-              <p className="text-lg text-muted-foreground mb-6">{market.description}</p>
-
+              <h1 className="text-3xl font-bold text-foreground mb-4">Market: {marketAddress.slice(0, 10)}...</h1>
+              
               <div className="p-6 rounded-lg bg-muted/50 mb-6">
-                <h3 className="font-semibold text-foreground mb-4">AI Probability Analysis</h3>
+                <h3 className="font-semibold text-foreground mb-4">Current Probability</h3>
                 <div className="mb-4">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="font-medium text-foreground">Predicted Outcome</span>
-                    <span className="text-sm text-muted-foreground">{100 - market.yesProbability}%</span>
+                    <span className="font-medium text-foreground">Market Prediction</span>
+                    <span className="text-sm text-muted-foreground">{(100 - marketInfo.yesProbability).toFixed(1)}%</span>
                   </div>
                   <div className="w-full bg-border rounded-full h-3">
                     <div
                       className="h-3 rounded-full bg-gradient-to-r from-primary to-accent transition-all"
-                      style={{ width: `${market.yesProbability}%` }}
+                      style={{ width: `${marketInfo.yesProbability}%` }}
                     />
                   </div>
                   <div className="flex justify-between items-center mt-3 text-sm font-medium">
-                    <span className="text-primary">YES {market.yesProbability}%</span>
-                    <span className="text-secondary">NO {100 - market.yesProbability}%</span>
+                    <span className="text-primary">YES {marketInfo.yesProbability.toFixed(1)}%</span>
+                    <span className="text-secondary">NO {(100 - marketInfo.yesProbability).toFixed(1)}%</span>
                   </div>
                 </div>
-                <p className="text-sm text-muted-foreground mt-4">{market.aiConfidence}</p>
               </div>
 
-              <div>
-                <h3 className="font-semibold text-foreground mb-3">Verification Sources</h3>
-                <div className="flex flex-wrap gap-2">
-                  {market.sources.map((source) => (
-                    <Badge key={source} variant="outline">
-                      {source}
+              {userStake && userStake.totalStake > 0 && (
+                <div className="p-4 rounded-lg bg-accent/10 border border-accent/20 mb-6">
+                  <h4 className="font-semibold text-foreground mb-2">Your Position</h4>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Staked</span>
+                    <span className="font-medium text-foreground">{userStake.totalStake.toFixed(2)} USDC</span>
+                  </div>
+                  <div className="flex justify-between text-sm mt-1">
+                    <span className="text-muted-foreground">Side</span>
+                    <Badge variant={userStake.side === 0 ? 'default' : 'secondary'}>
+                      {userStake.side === 0 ? 'YES' : 'NO'}
                     </Badge>
-                  ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </Card>
 
             <div className="grid grid-cols-3 gap-4">
@@ -159,21 +210,20 @@ export default function MarketDetailPage() {
                   <TrendingUp className="h-4 w-4" />
                   Total Pool
                 </div>
-                <div className="text-2xl font-bold text-foreground">${(totalPool / 1000).toFixed(1)}k</div>
-              </Card>
-              <Card className="p-4 border border-border bg-card">
-                <div className="text-sm text-muted-foreground mb-1 flex items-center gap-1">
-                  <Users className="h-4 w-4" />
-                  Participants
-                </div>
-                <div className="text-2xl font-bold text-foreground">{market.participants.toLocaleString()}</div>
+                <div className="text-2xl font-bold text-foreground">${(marketInfo.totalPool / 1000).toFixed(1)}k</div>
               </Card>
               <Card className="p-4 border border-border bg-card">
                 <div className="text-sm text-muted-foreground mb-1 flex items-center gap-1">
                   <Clock className="h-4 w-4" />
                   Ends In
                 </div>
-                <div className="text-2xl font-bold text-foreground">{daysLeft}d</div>
+                <div className="text-2xl font-bold text-foreground">{daysLeft > 0 ? `${daysLeft}d` : 'Ended'}</div>
+              </Card>
+              <Card className="p-4 border border-border bg-card">
+                <div className="text-sm text-muted-foreground mb-1">
+                  Fee
+                </div>
+                <div className="text-2xl font-bold text-foreground">{(marketInfo.feeBP / 100).toFixed(1)}%</div>
               </Card>
             </div>
           </div>
@@ -183,24 +233,32 @@ export default function MarketDetailPage() {
             <Card className="p-6 border border-border bg-card">
               <h2 className="text-xl font-bold text-foreground mb-6">Place Your Prediction</h2>
 
+              {marketInfo.state !== 1 && (
+                <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 mb-4 text-sm text-destructive">
+                  This market is {marketState.toLowerCase()} and not accepting new stakes.
+                </div>
+              )}
+
               {/* Side Selection */}
               <div className="space-y-3 mb-6">
                 <button
                   onClick={() => setSelectedSide("yes")}
+                  disabled={marketInfo.state !== 1}
                   className={`w-full p-4 rounded-lg border-2 transition font-semibold ${
                     selectedSide === "yes"
                       ? "border-primary bg-primary/10 text-primary"
-                      : "border-border bg-muted/50 text-foreground hover:border-primary/50"
+                      : "border-border bg-muted/50 text-foreground hover:border-primary/50 disabled:opacity-50 disabled:cursor-not-allowed"
                   }`}
                 >
                   Predict YES
                 </button>
                 <button
                   onClick={() => setSelectedSide("no")}
+                  disabled={marketInfo.state !== 1}
                   className={`w-full p-4 rounded-lg border-2 transition font-semibold ${
                     selectedSide === "no"
                       ? "border-secondary bg-secondary/10 text-secondary"
-                      : "border-border bg-muted/50 text-foreground hover:border-secondary/50"
+                      : "border-border bg-muted/50 text-foreground hover:border-secondary/50 disabled:opacity-50 disabled:cursor-not-allowed"
                   }`}
                 >
                   Predict NO
@@ -216,7 +274,7 @@ export default function MarketDetailPage() {
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-                  disabled={!selectedSide}
+                  disabled={!selectedSide || marketInfo.state !== 1}
                 />
                 <p className="text-xs text-muted-foreground mt-2">Available Balance: {usdcBalance.toFixed(2)} USDC</p>
               </div>
@@ -228,11 +286,11 @@ export default function MarketDetailPage() {
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">YES Pool</span>
-                      <span className="font-medium text-foreground">${(market.yesPool / 1000).toFixed(1)}k</span>
+                      <span className="font-medium text-foreground">${(marketInfo.yesPool / 1000).toFixed(1)}k</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">NO Pool</span>
-                      <span className="font-medium text-foreground">${(market.noPool / 1000).toFixed(1)}k</span>
+                      <span className="font-medium text-foreground">${(marketInfo.noPool / 1000).toFixed(1)}k</span>
                     </div>
                   </div>
                 </div>
@@ -241,15 +299,22 @@ export default function MarketDetailPage() {
               {/* Stake Button */}
               <Button
                 onClick={handleStake}
-                disabled={!selectedSide || !amount || isStaking || Number(amount) > usdcBalance}
+                disabled={!selectedSide || !amount || isStaking || Number(amount) > usdcBalance || marketInfo.state !== 1}
                 className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-semibold mb-3"
               >
-                {isStaking ? "Confirming..." : "Confirm Prediction"}
+                {isStaking ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Confirming...
+                  </>
+                ) : (
+                  'Confirm Prediction'
+                )}
               </Button>
 
               {/* Terms */}
               <p className="text-xs text-muted-foreground text-center">
-                By staking, you agree to the platform terms and Privy's smart wallet terms.
+                By staking, you agree to the platform terms and conditions.
               </p>
             </Card>
           </div>
