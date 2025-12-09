@@ -1,14 +1,15 @@
-import { parseAbi } from "viem"
+import AIOracle from '@/contracts/abi/AIOracle.json'
+import Market from '@/contracts/abi/Market.json'
+import MarketFactory from '@/contracts/abi/MarketFactory.json'
 
 export const BASE_SEPOLIA_CHAIN_ID = 84532
 
-// Contract addresses (Base Sepolia)
-export const FACTORY_ADDRESS =
-  (process.env.NEXT_PUBLIC_FACTORY_ADDRESS as `0x${string}`) || "0xfc70C42bC2355Cbc98Bc575032dA8Dc33F0a11F4"
-export const ORACLE_ADDRESS =
-  (process.env.NEXT_PUBLIC_ORACLE_ADDRESS as `0x${string}`) || "0x0a0F049dFfB9cD7E15948c1683167DDBEFEf968e"
-export const USDC_ADDRESS =
-  (process.env.NEXT_PUBLIC_USDC_ADDRESS as `0x${string}`) || "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+// Contract addresses from deployments
+export const FACTORY_ADDRESS = '0xDb657bC5A74A81E919f9d671035dB0b6370c9d16' as const
+export const ORACLE_ADDRESS = '0xfc70C42bC2355Cbc98Bc575032dA8Dc33F0a11F4' as const
+export const USDC_ADDRESS = '0x036CbD53842c5426634e7929541eC2318f3dCF7e' as const
+export const MARKET_IMPLEMENTATION = '0x7F0ba204385d2f0c5d42572ed4ceEc622441A451' as const
+export const TREASURY_ADDRESS = '0x8a7AEad289a7CFE47891C4a320c773b254581fcB' as const
 
 // Market states enum
 export const MARKET_STATE = {
@@ -24,36 +25,69 @@ export const MARKET_SIDE = {
   NO: 1,
 } as const
 
-// Contract ABIs
-export const FACTORY_ABI = parseAbi([
-  "function createSimpleMarket(string description, string category, uint256 duration) returns (address, bytes32)",
-  "function getAllMarkets(uint256 offset, uint256 limit) view returns (address[])",
-  "function getTotalMarkets() view returns (uint256)",
-  "function getStatistics() view returns (uint256 totalMarkets, uint256 totalVolume, uint256 totalFees, address treasury)",
-  "event MarketCreated(address indexed marketAddress, bytes32 indexed marketId, address indexed creator, string description, uint256 duration, string category)",
-])
+// Import ABIs from JSON files
+export const FACTORY_ABI = MarketFactory
+export const MARKET_ABI = Market
+export const ORACLE_ABI = AIOracle
 
-export const MARKET_ABI = parseAbi([
-  "function stake(uint8 side, uint256 amount) payable",
-  "function claim() nonpayable",
-  "function endsAt() view returns (uint256)",
-  "function state() view returns (uint8)",
-  "function getStake(address user) view returns (uint256 amount, uint8 side)",
-  "function getPoolSizes() view returns (uint256 yesPool, uint256 noPool)",
-  "function getResolution() view returns (uint8)",
-  "event Staked(address indexed user, uint8 side, uint256 amount, uint256 poolSize)",
-  "event MarketResolved(uint8 resolution, uint256 totalPool, uint256 winnerPool)",
-])
+// USDC ABI (ERC20)
+export const USDC_ABI = [
+  {
+    type: 'function',
+    name: 'approve',
+    inputs: [
+      { name: 'spender', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'allowance',
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+    ],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'balanceOf',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'transfer',
+    inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'decimals',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint8' }],
+    stateMutability: 'view',
+  },
+] as const
 
-export const ORACLE_ABI = parseAbi([
-  "function getResolution(bytes32 marketId) view returns (uint8)",
-  "function isResolutionFinalized(bytes32 marketId) view returns (bool)",
-  "function proposedResolutions(bytes32 marketId) view returns (uint8 side, uint256 timestamp, address proposer, uint256 votes, bool challenged)",
-])
+// Role constants
+export const ROLES = {
+  DEFAULT_ADMIN_ROLE: '0x0000000000000000000000000000000000000000000000000000000000000000',
+  ADMIN_ROLE: '0xa49807205ce4d355092ef5a8a18f56e8913cf4a201fbe287825b095693c21775',
+  CREATOR_ROLE: '0x828634d95e775031b9ff576b159a8509d3053581a8c9c4d7d86899e0afcd882f',
+  RESOLVER_ROLE: '0x55435dd261a4b9b3364963f7738a7a662ad9c84396d64be3365284bb7f0a5041',
+} as const
 
-export const USDC_ABI = parseAbi([
-  "function approve(address spender, uint256 amount) returns (bool)",
-  "function allowance(address owner, address spender) view returns (uint256)",
-  "function balanceOf(address account) view returns (uint256)",
-  "function transfer(address to, uint256 amount) returns (bool)",
-])
+// Helper type for market state
+export type MarketState = (typeof MARKET_STATE)[keyof typeof MARKET_STATE]
+
+// Helper type for market side
+export type MarketSide = (typeof MARKET_SIDE)[keyof typeof MARKET_SIDE]
