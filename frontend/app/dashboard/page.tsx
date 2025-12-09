@@ -6,33 +6,136 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { usePrivy } from "@privy-io/react-auth"
 import { useRouter } from "next/navigation"
-import { Wallet, TrendingUp, Award, Clock, RefreshCw, Copy } from "lucide-react"
+import { Wallet, TrendingUp, Award, Clock, Copy, Loader2 } from "lucide-react"
 import Link from "next/link"
-
 import { useState, useEffect } from "react"
-
-import { useBalance } from "wagmi"
+import { usePublicClient } from 'wagmi'
+import { baseSepolia } from 'viem/chains'
+import { USDC_ADDRESS, USDC_ABI, MARKET_ABI } from '@/lib/contracts'
+import { formatUsdc } from '@/lib/web3-utils'
+import { useFactory } from '@/hooks/use-factory'
+import { useMarket } from '@/hooks/use-market'
 import { AddFundsModal } from "@/components/AddFundsModal"
+import { toast } from 'sonner'
+import type { Address } from 'viem'
+
+interface UserPosition {
+  marketAddress: Address
+  yesStake: number
+  noStake: number
+  totalStake: number
+  side: number | null
+  canClaim: boolean
+  potentialPayout: number
+}
 
 export default function DashboardPage() {
   const { user, logout } = usePrivy()
   const router = useRouter()
+  const publicClient = usePublicClient({ chainId: baseSepolia.id })
+  const { getAllMarkets } = useFactory()
 
-  const [alertMessage, setAlertMessage] = useState<string | null>(null)
+  const [usdcBalance, setUsdcBalance] = useState<number>(0)
+  const [userPositions, setUserPositions] = useState<UserPosition[]>([])
+  const [loading, setLoading] = useState(true)
   const [isAddFundsModalOpen, setIsAddFundsModalOpen] = useState(false)
 
-  const address = user?.wallet?.address as `0x${string}` | undefined
+  const address = user?.wallet?.address as Address | undefined
 
-  const {
-    data: balance,
-    isLoading: isBalanceLoading,
-    refetch: refetchBalance,
-  } = useBalance({
-    address: address,
-  })
+  // Fetch USDC balance
+  useEffect(() => {
+    const fetchBalance = async () => {
+      if (!address || !publicClient) return
 
-  // Convert balance bigint → number (USDC = 6 decimals)
-  const usdcBalance = balance?.value ? Number(balance.value) / 1e6 : 0
+      try {
+        const balance = await publicClient.readContract({
+          address: USDC_ADDRESS,
+          abi: USDC_ABI,
+          functionName: 'balanceOf',
+          args: [address],
+        })
+        setUsdcBalance(formatUsdc(balance as bigint))
+      } catch (error) {
+        console.error('Error fetching USDC balance:', error)
+      }
+    }
+
+    fetchBalance()
+    const interval = setInterval(fetchBalance, 10000) // Refresh every 10s
+    return () => clearInterval(interval)
+  }, [address, publicClient])
+
+  // Fetch user positions
+  useEffect(() => {
+    const fetchPositions = async () => {
+      if (!address || !publicClient) return
+
+      setLoading(true)
+      try {
+        const markets = await getAllMarkets(0, 50)
+        
+        const positionsPromises = markets.map(async (marketAddress) => {
+          try {
+            const [yesStake, noStake, canClaimResult, potentialPayout] = await Promise.all([
+              publicClient.readContract({
+                address: marketAddress,
+                abi: MARKET_ABI,
+                functionName: 'stakes',
+                args: [address, 0], // YES
+              }),
+              publicClient.readContract({
+                address: marketAddress,
+                abi: MARKET_ABI,
+                functionName: 'stakes',
+                args: [address, 1], // NO
+              }),
+              publicClient.readContract({
+                address: marketAddress,
+                abi: MARKET_ABI,
+                functionName: 'canClaim',
+                args: [address],
+              }),
+              publicClient.readContract({
+                address: marketAddress,
+                abi: MARKET_ABI,
+                functionName: 'getPotentialPayout',
+                args: [address],
+              }),
+            ])
+
+            const yesStakeFormatted = formatUsdc(yesStake as bigint)
+            const noStakeFormatted = formatUsdc(noStake as bigint)
+            const totalStake = yesStakeFormatted + noStakeFormatted
+
+            if (totalStake === 0) return null
+
+            return {
+              marketAddress,
+              yesStake: yesStakeFormatted,
+              noStake: noStakeFormatted,
+              totalStake,
+              side: yesStakeFormatted > 0 ? 0 : 1,
+              canClaim: canClaimResult as boolean,
+              potentialPayout: formatUsdc(potentialPayout as bigint),
+            }
+          } catch (error) {
+            console.error(`Error fetching position for ${marketAddress}:`, error)
+            return null
+          }
+        })
+
+        const positions = await Promise.all(positionsPromises)
+        const validPositions = positions.filter((p): p is UserPosition => p !== null)
+        setUserPositions(validPositions)
+      } catch (error) {
+        console.error('Error fetching positions:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchPositions()
+  }, [address, publicClient, getAllMarkets])
 
   useEffect(() => {
     if (!user) {
@@ -42,55 +145,28 @@ export default function DashboardPage() {
 
   if (!user) return null
 
-  const activePositions = [
-    {
-      id: "1",
-      market: "Will Bitcoin reach $100k by end of 2025?",
-      side: "YES",
-      amount: 500,
-      currentProb: 72,
-      endsAt: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000),
-    },
-    {
-      id: "3",
-      market: "Will the Dow Jones close above 43,000?",
-      side: "YES",
-      amount: 750,
-      currentProb: 65,
-      endsAt: new Date(Date.now() + 70 * 24 * 60 * 60 * 1000),
-    },
-  ]
+  const totalStaked = userPositions.reduce((sum, p) => sum + p.totalStake, 0)
+  const totalPotentialEarnings = userPositions.reduce((sum, p) => sum + p.potentialPayout, 0)
+  const activePositions = userPositions.filter(p => !p.canClaim).length
+  const claimablePositions = userPositions.filter(p => p.canClaim)
 
-  const resolvedMarkets = [
-    {
-      id: "r1",
-      market: "Will inflation drop below 3% by Q2 2025?",
-      side: "YES",
-      amount: 300,
-      payout: 675,
-      result: "WON",
-    },
-    {
-      id: "r2",
-      market: "Will Tesla stock exceed $300 by June?",
-      side: "NO",
-      amount: 400,
-      payout: 0,
-      result: "LOST",
-    },
-  ]
+  const handleClaim = async (marketAddress: Address) => {
+    try {
+      const { claim, isLoading } = useMarket(marketAddress)
+      await claim()
+      toast.success('Claimed successfully!')
+      // Refresh positions
+      window.location.reload()
+    } catch (error: any) {
+      toast.error(error?.message || 'Claim failed')
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
 
       <main className="container mx-auto px-4 py-12">
-        {alertMessage && (
-          <div className="fixed top-4 right-4 bg-primary text-primary-foreground px-4 py-2 rounded-md shadow-lg z-50">
-            {alertMessage}
-          </div>
-        )}
-
         {/* Dashboard Header */}
         <div className="mb-8 flex justify-between items-start">
           <div>
@@ -115,7 +191,7 @@ export default function DashboardPage() {
               <div>
                 <p className="text-sm text-muted-foreground mb-1">Wallet Balance</p>
                 <p className="text-2xl font-bold text-foreground">
-                  {usdcBalance.toFixed(0)} USDC
+                  {usdcBalance.toFixed(2)} USDC
                 </p>
               </div>
               <Wallet className="h-8 w-8 text-accent" />
@@ -125,7 +201,7 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground mb-1">Active Predictions</p>
-                <p className="text-2xl font-bold text-foreground">2</p>
+                <p className="text-2xl font-bold text-foreground">{activePositions}</p>
               </div>
               <TrendingUp className="h-8 w-8 text-primary" />
             </div>
@@ -133,8 +209,8 @@ export default function DashboardPage() {
           <Card className="p-6 border border-border bg-card">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground mb-1">Win Rate</p>
-                <p className="text-2xl font-bold text-foreground">66.7%</p>
+                <p className="text-sm text-muted-foreground mb-1">Total Staked</p>
+                <p className="text-2xl font-bold text-foreground">{totalStaked.toFixed(2)} USDC</p>
               </div>
               <Award className="h-8 w-8 text-accent" />
             </div>
@@ -142,8 +218,8 @@ export default function DashboardPage() {
           <Card className="p-6 border border-border bg-card">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground mb-1">Total Earnings</p>
-                <p className="text-2xl font-bold text-foreground">+675 USDC</p>
+                <p className="text-sm text-muted-foreground mb-1">Potential Earnings</p>
+                <p className="text-2xl font-bold text-green-500">+{totalPotentialEarnings.toFixed(2)} USDC</p>
               </div>
               <Clock className="h-8 w-8 text-secondary" />
             </div>
@@ -155,119 +231,76 @@ export default function DashboardPage() {
           <div className="lg:col-span-2 space-y-8">
             {/* Active Predictions */}
             <div>
-              <h2 className="text-2xl font-bold text-foreground mb-4">Active Predictions</h2>
-              <div className="space-y-4">
-                {activePositions.map((position) => {
-                  const daysLeft = Math.ceil(
-                    (position.endsAt.getTime() - Date.now()) /
-                      (24 * 60 * 60 * 1000)
-                  )
-                  return (
+              <h2 className="text-2xl font-bold text-foreground mb-4">Your Positions</h2>
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              ) : userPositions.length === 0 ? (
+                <Card className="p-12 border border-border bg-card text-center">
+                  <p className="text-muted-foreground mb-4">You don't have any active positions yet</p>
+                  <Button asChild>
+                    <Link href="/markets">Explore Markets</Link>
+                  </Button>
+                </Card>
+              ) : (
+                <div className="space-y-4">
+                  {userPositions.map((position) => (
                     <Card
-                      key={position.id}
+                      key={position.marketAddress}
                       className="p-6 border border-border bg-card hover:border-primary transition"
                     >
                       <div className="mb-4">
                         <h3 className="font-semibold text-foreground mb-2">
-                          {position.market}
+                          Market: {position.marketAddress.slice(0, 6)}...{position.marketAddress.slice(-4)}
                         </h3>
-                        <Badge
-                          variant={position.side === "YES" ? "secondary" : "outline"}
-                        >
-                          Predicted {position.side}
+                        <Badge variant={position.side === 0 ? 'default' : 'secondary'}>
+                          Predicted {position.side === 0 ? 'YES' : 'NO'}
                         </Badge>
                       </div>
                       <div className="grid grid-cols-4 gap-4 mb-4 text-sm">
                         <div>
                           <p className="text-muted-foreground mb-1">Your Stake</p>
                           <p className="font-semibold text-foreground">
-                            {position.amount} USDC
+                            {position.totalStake.toFixed(2)} USDC
                           </p>
                         </div>
                         <div>
-                          <p className="text-muted-foreground mb-1">Current Prob</p>
+                          <p className="text-muted-foreground mb-1">Potential Payout</p>
+                          <p className="font-semibold text-green-500">
+                            {position.potentialPayout.toFixed(2)} USDC
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground mb-1">Status</p>
                           <p className="font-semibold text-foreground">
-                            {position.currentProb}%
+                            {position.canClaim ? 'Claimable' : 'Active'}
                           </p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground mb-1">Ends In</p>
-                          <p className="font-semibold text-foreground">{daysLeft} days</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-muted-foreground mb-1">Potential Return</p>
-                          <p className="font-semibold text-green-500">
-                            +{(position.amount * 1.2).toFixed(0)} USDC
-                          </p>
+                          {position.canClaim ? (
+                            <Button
+                              size="sm"
+                              onClick={() => handleClaim(position.marketAddress)}
+                              className="bg-accent hover:bg-accent/90 text-accent-foreground"
+                            >
+                              Claim
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              asChild
+                            >
+                              <Link href={`/markets/${position.marketAddress}`}>View</Link>
+                            </Button>
+                          )}
                         </div>
                       </div>
-                      <Button
-                        variant="outline"
-                        className="border-border text-foreground hover:bg-muted bg-transparent"
-                        asChild
-                      >
-                        <Link href={`/markets/${position.id}`}>View Market</Link>
-                      </Button>
                     </Card>
-                  )
-                })}
-              </div>
-            </div>
-
-            {/* Resolved Markets */}
-            <div>
-              <h2 className="text-2xl font-bold text-foreground mb-4">Resolved Markets</h2>
-              <div className="space-y-4">
-                {resolvedMarkets.map((market) => (
-                  <Card key={market.id} className="p-6 border border-border bg-card">
-                    <div className="mb-4">
-                      <div className="flex justify-between items-start">
-                        <h3 className="font-semibold text-foreground">{market.market}</h3>
-                        <Badge
-                          variant={
-                            market.result === "WON" ? "secondary" : "destructive"
-                          }
-                        >
-                          {market.result}
-                        </Badge>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <p className="text-muted-foreground mb-1">Your Stake</p>
-                        <p className="font-semibold text-foreground">
-                          {market.amount} USDC
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground mb-1">Predicted</p>
-                        <p className="font-semibold text-foreground">{market.side}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground mb-1">Payout</p>
-                        <p
-                          className={`font-semibold ${
-                            market.payout > 0
-                              ? "text-green-500"
-                              : "text-muted-foreground"
-                          }`}
-                        >
-                          {market.payout > 0 ? `+${market.payout}` : "Refunded"} USDC
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <Button
-                          size="sm"
-                          disabled={market.payout === 0}
-                          className="bg-accent hover:bg-accent/90 text-accent-foreground"
-                        >
-                          {market.payout > 0 ? "Claim" : "Claimed"}
-                        </Button>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -277,23 +310,20 @@ export default function DashboardPage() {
             <Card className="p-6 border border-border bg-card">
               <h3 className="font-bold text-foreground mb-4">Wallet</h3>
               <div className="mb-4">
-                <p className="text-sm text-muted-foreground mb-1">
-                  Connected Wallet
-                </p>
+                <p className="text-sm text-muted-foreground mb-1">Connected Wallet</p>
                 {address && (
-                  <div className="flex items-center justify-between text-sm text-muted-foreground">
-                    <p className="font-mono text-sm text-foreground break-all">
-                      {address}
+                  <div className="flex items-center justify-between">
+                    <p className="font-mono text-sm text-foreground truncate mr-2">
+                      {address.slice(0, 6)}...{address.slice(-4)}
                     </p>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        navigator.clipboard.writeText(address || "")
-                        setAlertMessage("Wallet address copied to clipboard!")
-                        setTimeout(() => setAlertMessage(null), 3000)
+                        navigator.clipboard.writeText(address)
+                        toast.success('Address copied!')
                       }}
-                      className="ml-2 px-2"
+                      className="px-2"
                     >
                       <Copy className="h-4 w-4" />
                     </Button>
@@ -302,12 +332,8 @@ export default function DashboardPage() {
               </div>
 
               <div className="mb-6">
-                <p className="text-sm text-muted-foreground mb-1">
-                  Available Balance
-                </p>
-                <p className="text-2xl font-bold text-foreground">
-                  {usdcBalance.toFixed(0)} USDC
-                </p>
+                <p className="text-sm text-muted-foreground mb-1">Available Balance</p>
+                <p className="text-2xl font-bold text-foreground">{usdcBalance.toFixed(2)} USDC</p>
               </div>
 
               <Button
@@ -319,33 +345,22 @@ export default function DashboardPage() {
               <Button
                 variant="outline"
                 className="w-full border-border text-foreground hover:bg-muted bg-transparent"
-                onClick={() => {
-                  setAlertMessage("Withdraw functionality is not yet implemented.")
-                  setTimeout(() => setAlertMessage(null), 3000)
-                }}
+                onClick={() => toast.info('Withdraw feature coming soon')}
               >
                 Withdraw
               </Button>
             </Card>
 
-            {/* AI Insights */}
-            <Card className="p-6 border border-border bg-card bg-linear-to-br from-primary/5 to-accent/5">
-              <h3 className="font-bold text-foreground mb-4">AI Insights</h3>
-              <div className="space-y-3 text-sm">
-                <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="font-medium text-foreground mb-1">Trending Markets</p>
-                  <p className="text-muted-foreground">
-                    3 high-confidence markets added today
-                  </p>
-                </div>
-                <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="font-medium text-foreground mb-1">
-                    Your Forecast Accuracy
-                  </p>
-                  <p className="text-muted-foreground">
-                    Better than 72% of forecasters
-                  </p>
-                </div>
+            {/* Quick Actions */}
+            <Card className="p-6 border border-border bg-card">
+              <h3 className="font-bold text-foreground mb-4">Quick Actions</h3>
+              <div className="space-y-2">
+                <Button variant="outline" className="w-full" asChild>
+                  <Link href="/markets">Browse Markets</Link>
+                </Button>
+                <Button variant="outline" className="w-full" onClick={() => window.location.reload()}>
+                  Refresh Data
+                </Button>
               </div>
             </Card>
           </div>
