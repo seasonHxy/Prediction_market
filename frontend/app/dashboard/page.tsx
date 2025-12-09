@@ -24,7 +24,7 @@ interface UserPosition {
   yesStake: number
   noStake: number
   totalStake: number
-  side: number | null
+  side: number
   canClaim: boolean
   potentialPayout: number
 }
