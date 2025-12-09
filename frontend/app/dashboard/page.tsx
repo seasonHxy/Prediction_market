@@ -109,12 +109,14 @@ export default function DashboardPage() {
 
             if (totalStake === 0) return null
 
+            const side = yesStakeFormatted > 0 ? 0 : 1
+
             return {
               marketAddress,
               yesStake: yesStakeFormatted,
               noStake: noStakeFormatted,
               totalStake,
-              side: yesStakeFormatted > 0 ? 0 : 1,
+              side,
               canClaim: canClaimResult as boolean,
               potentialPayout: formatUsdc(potentialPayout as bigint),
             }
