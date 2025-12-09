@@ -1,5 +1,5 @@
 import { createPublicClient, http } from "viem"
-import { base } from "viem/chains"
+import { baseSepolia } from "viem/chains"
 import {
   FACTORY_ADDRESS,
   FACTORY_ABI,
@@ -12,7 +12,7 @@ import {
 
 // Create public client for reads
 export const publicClient = createPublicClient({
-  chain: base,
+  chain: baseSepolia,
   transport: http("https://sepolia.base.org"),
 })
 
@@ -33,10 +33,11 @@ export async function getAllMarkets(offset = 0, limit = 50) {
       abi: FACTORY_ABI,
       functionName: "getAllMarkets",
       args: [BigInt(offset), BigInt(limit)],
-    })
+    }) as readonly `0x${string}`[]
+    
     return markets
   } catch (error) {
-    console.error("[v0] Error fetching markets:", error)
+    console.error("Error fetching markets:", error)
     return []
   }
 }
@@ -48,10 +49,11 @@ export async function getTotalMarkets() {
       address: FACTORY_ADDRESS,
       abi: FACTORY_ABI,
       functionName: "getTotalMarkets",
-    })
+    }) as bigint
+    
     return Number(total)
   } catch (error) {
-    console.error("[v0] Error fetching total markets:", error)
+    console.error("Error fetching total markets:", error)
     return 0
   }
 }
@@ -63,7 +65,8 @@ export async function getFactoryStats() {
       address: FACTORY_ADDRESS,
       abi: FACTORY_ABI,
       functionName: "getStatistics",
-    })
+    }) as readonly [bigint, bigint, bigint, `0x${string}`]
+    
     return {
       totalMarkets: Number(stats[0]),
       totalVolume: formatUsdc(stats[1]),
@@ -71,7 +74,7 @@ export async function getFactoryStats() {
       treasury: stats[3],
     }
   } catch (error) {
-    console.error("[v0] Error fetching factory stats:", error)
+    console.error("Error fetching factory stats:", error)
     return null
   }
 }
@@ -79,7 +82,7 @@ export async function getFactoryStats() {
 // Get market details
 export async function getMarketDetails(marketAddress: string) {
   try {
-    const [endsAt, state, poolSizes] = await Promise.all([
+    const [endsAt, state, yesPool, noPool] = await Promise.all([
       publicClient.readContract({
         address: marketAddress as `0x${string}`,
         abi: MARKET_ABI,
@@ -93,25 +96,30 @@ export async function getMarketDetails(marketAddress: string) {
       publicClient.readContract({
         address: marketAddress as `0x${string}`,
         abi: MARKET_ABI,
-        functionName: "getPoolSizes",
+        functionName: "yesPool",
       }),
-    ])
+      publicClient.readContract({
+        address: marketAddress as `0x${string}`,
+        abi: MARKET_ABI,
+        functionName: "noPool",
+      }),
+    ]) as [bigint, number, bigint, bigint]
 
-    const yesPool = formatUsdc(poolSizes[0])
-    const noPool = formatUsdc(poolSizes[1])
-    const totalPool = yesPool + noPool
-    const yesProbability = totalPool > 0 ? (yesPool / totalPool) * 100 : 50
+    const yesPoolFormatted = formatUsdc(yesPool)
+    const noPoolFormatted = formatUsdc(noPool)
+    const totalPool = yesPoolFormatted + noPoolFormatted
+    const yesProbability = totalPool > 0 ? (yesPoolFormatted / totalPool) * 100 : 50
 
     return {
       endsAt: Number(endsAt),
       state: Number(state),
-      yesPool,
-      noPool,
+      yesPool: yesPoolFormatted,
+      noPool: noPoolFormatted,
       totalPool,
       yesProbability,
     }
   } catch (error) {
-    console.error("[v0] Error fetching market details:", error)
+    console.error("Error fetching market details:", error)
     return null
   }
 }
@@ -119,18 +127,34 @@ export async function getMarketDetails(marketAddress: string) {
 // Get user stake in market
 export async function getUserStake(marketAddress: string, userAddress: string) {
   try {
-    const stake = await publicClient.readContract({
-      address: marketAddress as `0x${string}`,
-      abi: MARKET_ABI,
-      functionName: "getStake",
-      args: [userAddress as `0x${string}`],
-    })
+    const [yesStake, noStake] = await Promise.all([
+      publicClient.readContract({
+        address: marketAddress as `0x${string}`,
+        abi: MARKET_ABI,
+        functionName: "stakes",
+        args: [userAddress as `0x${string}`, 0], // YES
+      }),
+      publicClient.readContract({
+        address: marketAddress as `0x${string}`,
+        abi: MARKET_ABI,
+        functionName: "stakes",
+        args: [userAddress as `0x${string}`, 1], // NO
+      }),
+    ]) as [bigint, bigint]
+    
+    const yesStakeFormatted = formatUsdc(yesStake)
+    const noStakeFormatted = formatUsdc(noStake)
+    const totalStake = yesStakeFormatted + noStakeFormatted
+    const side = yesStakeFormatted > 0 ? 0 : noStakeFormatted > 0 ? 1 : null
+    
     return {
-      amount: formatUsdc(stake[0]),
-      side: Number(stake[1]),
+      yesStake: yesStakeFormatted,
+      noStake: noStakeFormatted,
+      totalStake,
+      side,
     }
   } catch (error) {
-    console.error("[v0] Error fetching user stake:", error)
+    console.error("Error fetching user stake:", error)
     return null
   }
 }
@@ -143,10 +167,11 @@ export async function getUsdcBalance(userAddress: string) {
       abi: USDC_ABI,
       functionName: "balanceOf",
       args: [userAddress as `0x${string}`],
-    })
+    }) as bigint
+    
     return formatUsdc(balance)
   } catch (error) {
-    console.error("[v0] Error fetching USDC balance:", error)
+    console.error("Error fetching USDC balance:", error)
     return 0
   }
 }
@@ -159,10 +184,11 @@ export async function getOracleResolution(marketId: string) {
       abi: ORACLE_ABI,
       functionName: "getResolution",
       args: [marketId as `0x${string}`],
-    })
+    }) as number
+    
     return Number(resolution)
   } catch (error) {
-    console.error("[v0] Error fetching oracle resolution:", error)
+    console.error("Error fetching oracle resolution:", error)
     return null
   }
 }
