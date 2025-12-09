@@ -194,8 +194,8 @@ export function useFactory() {
             sources,
             BigInt(endsAt),
             customFeeBP || 0,
-            customMaxStakePerUser ? BigInt(customMaxStakePerUser) : 0n,
-            customMaxTotalPool ? BigInt(customMaxTotalPool) : 0n,
+            customMaxStakePerUser ? BigInt(customMaxStakePerUser) : BigInt(0),
+            customMaxTotalPool ? BigInt(customMaxTotalPool) : BigInt(0),
           ],
         })
 
