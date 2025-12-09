@@ -6,6 +6,7 @@ import { ThemeToggle } from "./theme-toggle"
 import { SignUpButton } from "./signupButton"
 import { useRouter } from "next/navigation"
 import { Button } from "./ui/button"
+import { Shield } from "lucide-react"
 
 export function Navbar() {
   const { user, login, logout } = usePrivy()
@@ -29,6 +30,15 @@ export function Navbar() {
           >
             How It Works
           </Link>
+          {user && (
+            <Link 
+              href="/admin" 
+              className="text-sm font-medium text-muted-foreground hover:text-foreground transition flex items-center gap-1"
+            >
+              <Shield className="h-4 w-4" />
+              Admin
+            </Link>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -39,8 +49,6 @@ export function Navbar() {
             </Button>
           ) : (
             <SignUpButton/>
-             
-            
           )}
         </div>
       </div>
