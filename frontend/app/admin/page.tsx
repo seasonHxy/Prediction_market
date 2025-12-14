@@ -131,12 +131,19 @@ export default function AdminPage() {
       return false
     }
 
-    const endDate = new Date(endsAt).getTime()
-    const now = Date.now()
-    const minDate = now + (24 * 60 * 60 * 1000)
+    const endDate = new Date(endsAt).getTime() / 1000
+    const now = Math.floor(Date.now() / 1000)
+    const duration = endDate - now
 
-    if (endDate < minDate) {
-      toast.error('Market must end at least 24 hours from now')
+    // Check minimum duration (1 hour = 3600 seconds)
+    if (duration < 3600) {
+      toast.error('Market must run for at least 1 hour')
+      return false
+    }
+
+    // Check maximum duration (365 days = 31536000 seconds)
+    if (duration > 31536000) {
+      toast.error('Market cannot run for more than 365 days')
       return false
     }
 
@@ -150,7 +157,13 @@ export default function AdminPage() {
     try {
       const endTimestamp = Math.floor(new Date(endsAt).getTime() / 1000)
       
-      console.log('Creating market:', { question, category, endsAt: endTimestamp })
+      console.log('Creating market with params:', {
+        question,
+        category,
+        endTimestamp,
+        currentTime: Math.floor(Date.now() / 1000),
+        duration: endTimestamp - Math.floor(Date.now() / 1000)
+      })
       
       const receipt = await createSimpleMarket(question, category, endTimestamp)
       
