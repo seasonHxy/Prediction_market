@@ -154,15 +154,25 @@ export default function AdminPage() {
   const handleCreateMarket = async () => {
     if (!validateForm()) return
 
+    // Check if user has CREATOR_ROLE first
+    if (!isCreator && !isAdmin) {
+      toast.error('You need CREATOR_ROLE to create markets')
+      return
+    }
+
     try {
       const endTimestamp = Math.floor(new Date(endsAt).getTime() / 1000)
+      const currentTime = Math.floor(Date.now() / 1000)
+      const duration = endTimestamp - currentTime
       
       console.log('Creating market with params:', {
         question,
         category,
         endTimestamp,
-        currentTime: Math.floor(Date.now() / 1000),
-        duration: endTimestamp - Math.floor(Date.now() / 1000)
+        currentTime,
+        duration: `${duration} seconds (${(duration / 3600).toFixed(1)} hours)`,
+        hasCreatorRole: isCreator,
+        hasAdminRole: isAdmin,
       })
       
       const receipt = await createSimpleMarket(question, category, endTimestamp)
