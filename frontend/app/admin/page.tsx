@@ -112,11 +112,11 @@ export default function AdminPage() {
     return () => clearInterval(interval)
   }, [isAdmin, isCreator, getStatistics, getTotalMarkets])
 
-  // Get minimum date (24 hours from now)
+  // Get minimum date (1 hour from now)
   const getMinDate = () => {
-    const tomorrow = new Date()
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    return tomorrow.toISOString().slice(0, 16)
+    const nextHour = new Date()
+    nextHour.setHours(nextHour.getHours() + 1)
+    return nextHour.toISOString().slice(0, 16)
   }
 
   // Validate form
@@ -319,7 +319,7 @@ export default function AdminPage() {
                   className="bg-muted border-border text-foreground"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Market must run for at least 24 hours
+                  Market must run for at least 1 hour
                 </p>
               </div>
 
